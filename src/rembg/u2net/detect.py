@@ -13,43 +13,80 @@ from PIL import Image
 from skimage import transform
 from torchvision import transforms
 from tqdm import tqdm
+from hsh.library.hash import Hasher
 
 from . import data_loader, u2net
 
 
-def download(url, fname, path):
-    if os.path.exists(path):
-        return
+def download_file_from_google_drive(id, fname, destination):
+    head, tail = os.path.split(destination)
+    os.makedirs(head, exist_ok=True)
 
-    resp = requests.get(url, stream=True)
-    total = int(resp.headers.get("content-length", 0))
-    with open(path, "wb") as file, tqdm(
-        desc=fname, total=total, unit="iB", unit_scale=True, unit_divisor=1024,
+    URL = "https://docs.google.com/uc?export=download"
+
+    session = requests.Session()
+    response = session.get(URL, params={"id": id}, stream=True)
+
+    token = None
+    for key, value in response.cookies.items():
+        if key.startswith("download_warning"):
+            token = value
+            break
+
+    if token:
+        params = {"id": id, "confirm": token}
+        response = session.get(URL, params=params, stream=True)
+
+    total = int(response.headers.get("content-length", 0))
+
+    with open(destination, "wb") as file, tqdm(
+        desc=f"Downloading {tail} to {head}",
+        total=total,
+        unit="iB",
+        unit_scale=True,
+        unit_divisor=1024,
     ) as bar:
-        for data in resp.iter_content(chunk_size=1024):
+        for data in response.iter_content(chunk_size=1024):
             size = file.write(data)
             bar.update(size)
-
 
 def load_model(model_name: str = "u2net"):
     os.makedirs(os.path.expanduser(os.path.join("~", ".u2net")), exist_ok=True)
 
+    hasher = Hasher()
+    net = u2net.U2NETP(3, 1)
+
     if model_name == "u2netp":
-        net = u2net.U2NETP(3, 1)
-        path = os.path.expanduser(os.path.join("~", ".u2net", model_name))
-        download(
-            "https://www.dropbox.com/s/usb1fyiuh8as5gi/u2netp.pth?dl=1",
-            "u2netp.pth",
-            path,
+        path = os.environ.get(
+            "U2NETP_PATH",
+            os.path.expanduser(os.path.join("~", ".u2net", model_name)),
         )
+        print(path)
+        if (
+            not os.path.exists(path)
+            or hasher.md5(path) != "e4f636406ca4e2af789941e7f139ee2e"
+        ):
+            download_file_from_google_drive(
+                "1rbSTGKAE-MTxBYHd-51l2hMOQPT_7EPy",
+                "u2netp.pth",
+                path,
+            )
+
     elif model_name == "u2net":
-        net = u2net.U2NET(3, 1)
-        path = os.path.expanduser(os.path.join("~", ".u2net", model_name))
-        download(
-            "https://www.dropbox.com/s/kdu5mhose1clds0/u2net.pth?dl=1",
-            "u2net.pth",
-            path,
+        path = os.environ.get(
+            "U2NET_PATH",
+            os.path.expanduser(os.path.join("~", ".u2net", model_name)),
         )
+        print(path)
+        if (
+            not os.path.exists(path)
+            or hasher.md5(path) != "347c3d51b01528e5c6c071e3cff1cb55"
+        ):
+            download_file_from_google_drive(
+                "1ao1ovG1Qtx4b7EoskHXmi2E9rp5CHLcZ",
+                "u2net.pth",
+                path,
+            )
     else:
         print("Choose between u2net or u2netp", file=sys.stderr)
 
